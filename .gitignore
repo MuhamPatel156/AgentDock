@@ -1,0 +1,10 @@
+.env
+.agentdock/
+node_modules/
+*.tar.gz
+tests/tmp-*/
+outputs/
+
+__pycache__/
+*.pyc
+.venv/

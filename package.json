@@ -1,0 +1,22 @@
+{
+  "name": "agentdock-studio",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "configure:azure": "node scripts/configure-azure.mjs",
+    "sandbox:prepare": "node scripts/prepare-sandbox.mjs",
+    "preview:build": "node scripts/build-preview.mjs",
+    "backup:source": "node scripts/backup-source.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "test:runtime-live": "node scripts/test-runtime-live.mjs",
+    "check": "node scripts/check.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "acceptance": "node scripts/acceptance-check.mjs",
+    "pretest": "node scripts/build-preview.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

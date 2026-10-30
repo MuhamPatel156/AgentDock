@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {diagnoseRuntime} from '../lib/runtime-diagnostics.mjs';
+import {fixture} from './helpers.mjs';
+function docker({os='linux',labels={'agentdock.runtime.protocol':'3','agentdock.python.protocol':'1'},missing=''}={}){const calls=[];return {calls,execute:async args=>{calls.push(args);if(missing===args[0])return {code:1,output:'must-not-leak-sensitive-diagnostic'};return {code:0,output:args[0]==='--version'?'Docker fixture':args[0]==='version'?JSON.stringify({Os:os}):JSON.stringify(labels)};}};}
+test('diagnostics inspect local infrastructure without running, downloading or logging source',async()=>{const d=docker();const result=await diagnoseRuntime({config:{enableBuilds:false,enableServers:false,aiKey:'must-not-leak'},execute:d.execute});assert.equal(result.ready,true);assert.equal(result.checks.find(c=>c.name==='Live backends').status,'info');assert.deepEqual(d.calls.map(a=>a[0]),['--version','version','image']);assert.ok(d.calls.every(a=>!['run','pull','build','logs'].includes(a[0])));assert.ok(!JSON.stringify(result).includes('must-not-leak'));});
+test('diagnostics explain a missing CLI or engine without exposing raw command errors',async()=>{for(const missing of ['--version','version']){const d=docker({missing});const result=await diagnoseRuntime({execute:d.execute});assert.equal(result.ready,false);assert.equal(result.checks.at(-1).status,'warn');assert.ok(!JSON.stringify(result).includes('must-not-leak'));assert.equal(d.calls.some(a=>a[0]==='image'),false);}});
+test('Windows engines and outdated trusted images receive actionable diagnostics',async()=>{for(const options of [{os:'windows'},{labels:{}},{missing:'image'}]){const d=docker(options),result=await diagnoseRuntime({execute:d.execute});assert.equal(result.ready,false);assert.equal(result.checks.at(-1).status,'warn');assert.match(result.checks.at(-1).message,/Linux|rebuild|sandbox:prepare/);}});
+test('invalid configured image names are rejected before Docker image inspection',async()=>{const d=docker();const result=await diagnoseRuntime({config:{sandboxImage:'image; whoami'},execute:d.execute});assert.equal(result.ready,false);assert.match(result.checks.at(-1).message,/invalid/);assert.equal(d.calls.length,2);});
+
+test('Docker permission failures do not claim that an already-running engine is stopped',async()=>{
+ for(const failure of [{code:1,output:'open pipe: Access is denied; private-fixture'},Object.assign(Error('private-fixture'),{code:'EACCES'})]){
+  const result=await diagnoseRuntime({execute:async args=>{if(args[0]==='--version')return {code:0,output:'Docker'};if(failure instanceof Error)throw failure;return failure;}});
+  assert.equal(result.ready,false);assert.match(result.checks.at(-1).message,/process cannot access Docker/);assert.ok(!JSON.stringify(result).includes('private-fixture'));
+ }
+});
+test('diagnostics require an authenticated same-origin session',async t=>{const d=docker();const {call,register}=await fixture(t,{executeDocker:d.execute});assert.equal((await call('/api/runtime/diagnostics')).status,401);assert.equal(d.calls.length,0);const a=await register();assert.equal((await call('/api/runtime/diagnostics',{cookie:a.cookie,origin:'null'})).status,403);const response=await call('/api/runtime/diagnostics',{cookie:a.cookie});assert.equal(response.status,200);assert.equal(response.data.ready,true);});

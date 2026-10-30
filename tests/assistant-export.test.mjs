@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';import vm from 'node:vm';import {assistantTemplate} from '../dist/templates.mjs';
+test('exported assistant uses compatible routing, one call and sanitized failures',async()=>{
+ for(const fail of [false,true]){
+ let handler,request,calls=0;const source=assistantTemplate()['server.mjs'].replace(/^import .*;$/gm,'').replace("path.dirname(fileURLToPath(import.meta.url))","'/fixture'");
+ vm.runInNewContext(source,{http:{createServer:f=>{handler=f;return {listen(){}};}},path:{join:(...p)=>p.join('/')},readFile:async()=>JSON.stringify({instructions:'Reply briefly.',outputTokens:256}),process:{env:{OPENAI_MODEL:'openai/gpt-4.1-mini',OPENAI_ENDPOINT:'https://example.test/custom/v1',OPENAI_API_KEY:'private-fixture'}},URL,Buffer,AbortSignal,console,fetch:async(url,options)=>{calls++;request={url:String(url),...options};if(fail)throw Error('private-fixture');return {ok:true,json:async()=>({choices:[{message:{content:'4'}}]})};}});
+ const req={method:'POST',url:'/api/chat',headers:{host:'127.0.0.1:4180',origin:'http://127.0.0.1:4180','content-type':'application/json'},async *[Symbol.asyncIterator](){yield JSON.stringify({input:'2+2',confirm:true});}};let status,body;await handler(req,{writeHead:s=>status=s,end:s=>body=JSON.parse(s)});assert.equal(calls,1);assert.equal(request.url,'https://example.test/custom/v1/chat/completions');assert.equal(request.headers.Authorization,'Bearer private-fixture');assert.equal(JSON.parse(request.body).model,'gpt-4.1-mini');assert.equal(JSON.parse(request.body).max_tokens,256);assert.equal(status,fail?400:200);assert.ok(!JSON.stringify(body).includes('private-fixture'));if(!fail)assert.equal(body.text,'4');
+ }
+});
